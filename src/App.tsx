@@ -43,6 +43,10 @@ import {
   removeConfigDraft,
   saveConfigDraft,
 } from './storage/config-draft'
+import {
+  isDesktopRuntime,
+  saveDesktopConfigFile,
+} from './platform/desktop-files'
 import './styles/controls.css'
 import './styles/config-tools.css'
 
@@ -119,6 +123,8 @@ function cloneSettingsValues(
 }
 
 function App() {
+  const desktopMode = isDesktopRuntime()
+
   const [initialDraftResult] = useState(() =>
     loadConfigDraft(window.localStorage),
   )
@@ -162,6 +168,7 @@ function App() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [changesOpen, setChangesOpen] = useState(false)
   const [presetOpen, setPresetOpen] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
 
   const draftHasUserWork =
     configDraftHasUserWork({
@@ -443,8 +450,31 @@ function App() {
     setChangesOpen(true)
   }
 
-  const downloadConfiguration = () => {
+  const exportConfiguration = async () => {
     if (errorCount > 0) {
+      return
+    }
+
+    setExportMessage('')
+
+    if (desktopMode) {
+      try {
+        const savedFile = await saveDesktopConfigFile(generatedIni)
+
+        if (savedFile) {
+          setExportMessage(`已保存：${savedFile.name}`)
+        }
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : typeof caughtError === 'string'
+              ? caughtError
+              : '发生了未知文件写入错误。'
+
+        setExportMessage(`保存失败：${message}`)
+      }
+
       return
     }
 
@@ -463,14 +493,17 @@ function App() {
     anchor.remove()
 
     URL.revokeObjectURL(downloadUrl)
+    setExportMessage('已下载：PalWorldSettings.ini')
   }
 
   const footerStatus =
     errorCount > 0
-      ? `发现 ${errorCount} 个错误，修复后才能下载`
-      : warningCount > 0
-        ? `发现 ${warningCount} 个提醒，可以继续导出`
-        : '配置检查通过'
+      ? `发现 ${errorCount} 个错误，修复后才能导出`
+      : exportMessage
+        ? exportMessage
+        : warningCount > 0
+          ? `发现 ${warningCount} 个提醒，可以继续导出`
+          : '配置检查通过'
 
   const baselineLabel = hasImportedConfiguration
     ? '最近导入值'
@@ -508,7 +541,7 @@ function App() {
 
           <p className="app-description">
             导入、修改、检查并导出 PalWorldSettings.ini。
-            所有配置都只在浏览器本地处理。
+            所有配置都只在本地处理，不会上传。
           </p>
         </div>
 
@@ -545,11 +578,13 @@ function App() {
             title={
               errorCount > 0
                 ? '请先修复配置错误'
-                : '下载当前配置'
+                : desktopMode
+                  ? '使用系统保存窗口保存当前配置'
+                  : '下载当前配置'
             }
-            onClick={downloadConfiguration}
+            onClick={exportConfiguration}
           >
-            导出配置
+            {desktopMode ? '保存配置' : '导出配置'}
           </button>
         </div>
       </header>
@@ -750,11 +785,15 @@ function App() {
             title={
               errorCount > 0
                 ? '请先修复配置错误'
-                : '下载当前配置'
+                : desktopMode
+                  ? '使用系统保存窗口保存当前配置'
+                  : '下载当前配置'
             }
-            onClick={downloadConfiguration}
+            onClick={exportConfiguration}
           >
-            下载 PalWorldSettings.ini
+            {desktopMode
+              ? '保存 PalWorldSettings.ini'
+              : '下载 PalWorldSettings.ini'}
           </button>
         </div>
       </footer>
@@ -775,8 +814,9 @@ function App() {
       {previewOpen && (
         <ConfigPreview
           content={generatedIni}
+          actionLabel={desktopMode ? '保存 INI' : '下载 INI'}
           onClose={() => setPreviewOpen(false)}
-          onDownload={downloadConfiguration}
+          onDownload={exportConfiguration}
         />
       )}
     </main>

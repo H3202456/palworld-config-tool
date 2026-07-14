@@ -2,12 +2,14 @@ import { useState } from 'react'
 
 interface ConfigPreviewProps {
   content: string
+  actionLabel?: string
   onClose: () => void
-  onDownload: () => void
+  onDownload: () => void | Promise<void>
 }
 
 export function ConfigPreview({
   content,
+  actionLabel = '下载 INI',
   onClose,
   onDownload,
 }: ConfigPreviewProps) {
@@ -78,7 +80,7 @@ export function ConfigPreview({
               type="button"
               onClick={onDownload}
             >
-              下载 INI
+              {actionLabel}
             </button>
           </div>
         </div>

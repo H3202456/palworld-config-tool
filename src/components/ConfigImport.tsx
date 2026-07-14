@@ -1,4 +1,8 @@
 import { useState, type ChangeEvent } from 'react'
+import {
+  isDesktopRuntime,
+  openDesktopConfigFile,
+} from '../platform/desktop-files'
 
 export interface ConfigImportSummary {
   supportedCount: number
@@ -11,14 +15,68 @@ interface ConfigImportProps {
   onClose: () => void
 }
 
+function getErrorMessage(
+  caughtError: unknown,
+  fallback: string,
+): string {
+  if (caughtError instanceof Error) {
+    return caughtError.message
+  }
+
+  if (typeof caughtError === 'string') {
+    return caughtError
+  }
+
+  return fallback
+}
+
 export function ConfigImport({
   onImport,
   onClose,
 }: ConfigImportProps) {
+  const desktopMode = isDesktopRuntime()
   const [source, setSource] = useState('')
   const [message, setMessage] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [readingFile, setReadingFile] = useState(false)
+
+  const applyLoadedFile = (
+    content: string,
+    fileName: string,
+  ) => {
+    setSource(content)
+    setMessage(`已读取文件：${fileName}`)
+    setWarnings([])
+    setError('')
+  }
+
+  const handleDesktopFileSelect = async () => {
+    setReadingFile(true)
+    setError('')
+
+    try {
+      const selectedFile = await openDesktopConfigFile()
+
+      if (!selectedFile) {
+        return
+      }
+
+      applyLoadedFile(
+        selectedFile.content,
+        selectedFile.name,
+      )
+    } catch (caughtError) {
+      setError(
+        getErrorMessage(
+          caughtError,
+          '无法读取这个文件，请确认文件没有损坏。',
+        ),
+      )
+    } finally {
+      setReadingFile(false)
+    }
+  }
 
   const handleFileChange = async (
     event: ChangeEvent<HTMLInputElement>,
@@ -29,15 +87,23 @@ export function ConfigImport({
       return
     }
 
+    setReadingFile(true)
+    setError('')
+
     try {
       const content = await file.text()
 
-      setSource(content)
-      setMessage(`已读取文件：${file.name}`)
-      setWarnings([])
-      setError('')
-    } catch {
-      setError('无法读取这个文件，请确认文件没有损坏。')
+      applyLoadedFile(content, file.name)
+    } catch (caughtError) {
+      setError(
+        getErrorMessage(
+          caughtError,
+          '无法读取这个文件，请确认文件没有损坏。',
+        ),
+      )
+    } finally {
+      setReadingFile(false)
+      event.target.value = ''
     }
   }
 
@@ -55,12 +121,12 @@ export function ConfigImport({
 
       setWarnings(summary.warnings)
     } catch (caughtError) {
-      const errorMessage =
-        caughtError instanceof Error
-          ? caughtError.message
-          : '发生了未知解析错误。'
-
-      setError(errorMessage)
+      setError(
+        getErrorMessage(
+          caughtError,
+          '发生了未知解析错误。',
+        ),
+      )
     }
   }
 
@@ -87,16 +153,32 @@ export function ConfigImport({
       </div>
 
       <div className="config-import-file-row">
-        <label className="file-picker-button">
-          选择配置文件
-          <input
-            type="file"
-            accept=".ini,.txt,text/plain"
-            onChange={handleFileChange}
-          />
-        </label>
+        {desktopMode ? (
+          <button
+            className="file-picker-button"
+            type="button"
+            disabled={readingFile}
+            onClick={handleDesktopFileSelect}
+          >
+            {readingFile ? '正在读取…' : '选择配置文件'}
+          </button>
+        ) : (
+          <label className="file-picker-button">
+            {readingFile ? '正在读取…' : '选择配置文件'}
+            <input
+              type="file"
+              accept=".ini,.txt,text/plain"
+              disabled={readingFile}
+              onChange={handleFileChange}
+            />
+          </label>
+        )}
 
-        <span>文件只在当前浏览器中读取，不会上传。</span>
+        <span>
+          {desktopMode
+            ? '通过系统文件选择器读取，配置不会上传。'
+            : '文件只在当前浏览器中读取，不会上传。'}
+        </span>
       </div>
 
       <textarea
@@ -148,7 +230,9 @@ ExpRate=20.000000,bIsPvP=True`}
         <button
           className="button button-primary"
           type="button"
-          disabled={source.trim().length === 0}
+          disabled={
+            readingFile || source.trim().length === 0
+          }
           onClick={handleImport}
         >
           解析并载入
